@@ -3,7 +3,8 @@ local M = {}
 M.state = nil
 
 local function log(msg)
-  local f = io.open('/home/sifi/ctrlp_debug.log', 'a')
+  local cache_dir = vim.fn.stdpath('cache')
+  local f = io.open(cache_dir .. '/ctrlp_debug.log', 'a')
   if f then
     f:write(os.date('%Y-%m-%d %H:%M:%S ') .. tostring(msg) .. '\n')
     f:close()
