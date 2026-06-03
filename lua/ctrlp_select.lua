@@ -168,21 +168,33 @@ function M.select(items, opts, on_choice)
   ext_vars[ext_idx].lname = prompt
   vim.g.ctrlp_ext_vars = ext_vars
 
+  -- Setup autocmd to detect cancellation when the CtrlP buffer is closed
+  local autocmd_id
+  autocmd_id = vim.api.nvim_create_autocmd({"BufDelete", "BufWinLeave"}, {
+    pattern = "__CtrlP__",
+    once = true,
+    callback = function()
+      log("autocmd triggered: CtrlP buffer closed")
+      if M.state and not M.state.chosen then
+        log("autocmd: CtrlP was cancelled, calling callback with nil")
+        local cb = M.state.on_choice
+        M.state = nil
+        vim.schedule(function()
+          cb(nil, nil)
+        end)
+      end
+      if autocmd_id then
+        pcall(vim.api.nvim_del_autocmd, autocmd_id)
+      end
+    end
+  })
+
   local builtins = vim.g.ctrlp_builtins or 2
   local ctrlp_id = builtins + ext_idx
   log("select: launching ctrlp with id=" .. tostring(ctrlp_id))
 
   vim.fn['ctrlp#init'](ctrlp_id)
   log("select: ctrlp#init returned")
-
-  if M.state and not M.state.chosen then
-    log("select: ctrlp was cancelled, scheduling callback with nil")
-    local cb = M.state.on_choice
-    M.state = nil
-    vim.schedule(function()
-      cb(nil, nil)
-    end)
-  end
 end
 
 return M
