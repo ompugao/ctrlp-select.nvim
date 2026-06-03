@@ -61,7 +61,10 @@ function M.get_candidates()
   end
   local candidates = {}
   for i, item in ipairs(M.state.items) do
-    table.insert(candidates, format_item(item, M.state.opts))
+    local formatted = format_item(item, M.state.opts)
+    -- Replace newlines with spaces to keep it single-line
+    formatted = formatted:gsub("\n", " ")
+    table.insert(candidates, string.format("%d: %s", i, formatted))
   end
   return candidates
 end
@@ -74,14 +77,21 @@ function M.accept(mode, str)
     return
   end
 
-  -- 2. Find the selected item
+  -- 2. Extract index from the selected line prefix (e.g. "2: banana" -> 2)
+  local idx_str = str:match("^(%d+):")
+  local chosen_idx = tonumber(idx_str)
   local chosen_item = nil
-  local chosen_idx = nil
-  for i, item in ipairs(M.state.items) do
-    if format_item(item, M.state.opts) == str then
-      chosen_item = item
-      chosen_idx = i
-      break
+
+  if chosen_idx and M.state.items[chosen_idx] then
+    chosen_item = M.state.items[chosen_idx]
+  else
+    -- Fallback: exact string matching if the prefix wasn't matched
+    for i, item in ipairs(M.state.items) do
+      if format_item(item, M.state.opts) == str then
+        chosen_item = item
+        chosen_idx = i
+        break
+      end
     end
   end
 
