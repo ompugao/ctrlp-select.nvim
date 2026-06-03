@@ -2,6 +2,14 @@ local M = {}
 
 M.state = nil
 
+local function log(msg)
+  local f = io.open('/home/sifi/ctrlp_debug.log', 'a')
+  if f then
+    f:write(os.date('%Y-%m-%d %H:%M:%S ') .. tostring(msg) .. '\n')
+    f:close()
+  end
+end
+
 local function setup_vim_callbacks()
   vim.cmd([[
     if !exists('*CtrlPSelectInit')
@@ -29,6 +37,7 @@ local function format_item(item, opts)
 end
 
 function M.register()
+  log("register() called")
   setup_vim_callbacks()
 
   local ext_vars = vim.g.ctrlp_ext_vars or {}
@@ -52,44 +61,51 @@ function M.register()
     }
     table.insert(ext_vars, ext)
     vim.g.ctrlp_ext_vars = ext_vars
+    log("Extension registered in g:ctrlp_ext_vars")
+  else
+    log("Extension already registered in g:ctrlp_ext_vars")
   end
 end
 
 function M.get_candidates()
+  log("get_candidates() called")
   if not M.state then
+    log("get_candidates: state is nil!")
     return {}
   end
   local candidates = {}
   for i, item in ipairs(M.state.items) do
     local formatted = format_item(item, M.state.opts)
-    -- Replace newlines with spaces to keep it single-line
     formatted = formatted:gsub("\n", " ")
     table.insert(candidates, string.format("%d: %s", i, formatted))
   end
+  log("get_candidates returned " .. #candidates .. " candidates")
   return candidates
 end
 
 function M.accept(mode, str)
-  -- 1. Close the CtrlP window
+  log("accept() called with mode=" .. tostring(mode) .. ", str=" .. tostring(str))
   vim.fn['ctrlp#exit']()
 
   if not M.state then
+    log("accept: state is nil!")
     return
   end
 
-  -- 2. Extract index from the selected line prefix (e.g. "2: banana" -> 2)
   local idx_str = str:match("^(%d+):")
   local chosen_idx = tonumber(idx_str)
   local chosen_item = nil
 
   if chosen_idx and M.state.items[chosen_idx] then
     chosen_item = M.state.items[chosen_idx]
+    log("accept: matched by index=" .. tostring(chosen_idx))
   else
-    -- Fallback: exact string matching if the prefix wasn't matched
+    log("accept: index match failed, falling back to string match")
     for i, item in ipairs(M.state.items) do
       if format_item(item, M.state.opts) == str then
         chosen_item = item
         chosen_idx = i
+        log("accept: matched by string index=" .. tostring(i))
         break
       end
     end
@@ -99,20 +115,22 @@ function M.accept(mode, str)
   local cb = M.state.on_choice
   M.state = nil
 
-  -- 3. Run callback asynchronously
   vim.schedule(function()
+    log("Invoking selection callback with item=" .. tostring(chosen_item) .. ", idx=" .. tostring(chosen_idx))
     cb(chosen_item, chosen_idx)
   end)
 end
 
 function M.select(items, opts, on_choice)
+  log("select() called with " .. tostring(items and #items or 0) .. " items")
   if not items or #items == 0 then
+    log("select: items is empty, calling callback with nil")
     on_choice(nil, nil)
     return
   end
 
-  -- Lazy-load CtrlP if not loaded yet
   if vim.fn.exists('g:loaded_ctrlp') == 0 then
+    log("select: loading ctrlp.vim via lazy")
     local ok, lazy = pcall(require, 'lazy')
     if ok then
       lazy.load({ plugins = { 'ctrlp.vim' } })
@@ -122,7 +140,6 @@ function M.select(items, opts, on_choice)
   opts = opts or {}
   local prompt = opts.prompt or "Select:"
 
-  -- Initialize session state
   M.state = {
     items = items,
     opts = opts,
@@ -130,10 +147,8 @@ function M.select(items, opts, on_choice)
     chosen = false,
   }
 
-  -- Register callbacks and the extension
   M.register()
 
-  -- Find extension index in g:ctrlp_ext_vars
   local ext_vars = vim.g.ctrlp_ext_vars or {}
   local ext_idx = nil
   for i, e in ipairs(ext_vars) do
@@ -144,24 +159,24 @@ function M.select(items, opts, on_choice)
   end
 
   if not ext_idx then
-    -- Fallback in case registration failed
+    log("select: ext_idx not found, aborting")
     M.state = nil
     on_choice(nil, nil)
     return
   end
 
-  -- Dynamically update lname with the prompt
   ext_vars[ext_idx].lname = prompt
   vim.g.ctrlp_ext_vars = ext_vars
 
-  -- Calculate ID and run CtrlP
   local builtins = vim.g.ctrlp_builtins or 2
   local ctrlp_id = builtins + ext_idx
+  log("select: launching ctrlp with id=" .. tostring(ctrlp_id))
 
   vim.fn['ctrlp#init'](ctrlp_id)
+  log("select: ctrlp#init returned")
 
-  -- If ctrlp#init returned and we haven't chosen, then CtrlP was cancelled
   if M.state and not M.state.chosen then
+    log("select: ctrlp was cancelled, scheduling callback with nil")
     local cb = M.state.on_choice
     M.state = nil
     vim.schedule(function()
